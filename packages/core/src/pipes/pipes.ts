@@ -49,7 +49,7 @@ export interface RunResponse {
 	created: number;
 	model: string;
 	choices: ChoiceGenerate[];
-	usage: Usage;
+	usage?: Usage;
 	system_fingerprint: string | null;
 	rawResponse?: {
 		headers: Record<string, string>;
@@ -311,6 +311,9 @@ export class Pipe {
 		>(endpoint, body);
 		if (Object.entries(response).length === 0) {
 			return {} as RunResponse | RunResponseStream;
+		}
+		if (stream && !this.hasTools) {
+			return response as RunResponseStream;
 		}
 
 		if (!runTools) {

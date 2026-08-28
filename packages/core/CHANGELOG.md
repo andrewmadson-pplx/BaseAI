@@ -6,6 +6,8 @@
 
 -   Add the `perplexity:fast`, `perplexity:low`, `perplexity:medium`, and
     `perplexity:high` model identifiers for local Perplexity Agent API Pipes.
+-   Return tool-free streams without pre-reading them, expose Perplexity
+    citation metadata, and allow provider responses to omit unavailable usage.
 
 ## 0.9.43
 
