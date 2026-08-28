@@ -5,7 +5,8 @@
 ### Minor Changes
 
 -   Add local Perplexity Agent API support with the `fast`, `low`, `medium`, and
-    `high` presets, including text streaming and citation mapping.
+    `high` presets, including provider-local text streaming, citation mapping,
+    executing-model reporting, optional usage, and status-preserving errors.
 -   Deprecate the five legacy `perplexity:llama-3.1-sonar-*` identifiers ahead
     of their scheduled September 27, 2026 shutdown. Existing Pipes are not
     migrated automatically; follow the [Perplexity Sonar migration

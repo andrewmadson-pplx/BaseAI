@@ -7,22 +7,27 @@
 	"main": "index.js",
 	"scripts": {
 		"baseai": "baseai",
+		"check": "pnpm --filter baseai build && pnpm type-check && baseai --help",
 		"pipe.run": "npx tsx ./examples/pipe.run.ts",
 		"pipe.run.stream": "npx tsx ./examples/pipe.run.stream.ts",
 		"pipe.run.stream.loop": "npx tsx ./examples/pipe.run.stream.loop.ts",
 		"pipe.perplexity.agent": "npx tsx ./examples/pipe.perplexity-agent.ts",
+		"pipe.perplexity.agent.stream": "npx tsx ./examples/pipe.perplexity-agent.stream.ts",
 		"pipe.generate.text": "npx tsx ./examples/pipe.generate.text.ts",
-		"pipe.stream.text": "npx tsx ./examples/pipe.stream.text.ts"
+		"pipe.stream.text": "npx tsx ./examples/pipe.stream.text.ts",
+		"type-check": "pnpm --filter @baseai/core build && tsc --noEmit"
 	},
 	"keywords": [],
 	"author": "Ahmad Awais <me@AhmadAwais.com> (https://twitter.com/MrAhmadAwais)",
 	"license": "UNLICENSED",
 	"dependencies": {
-		"@baseai/core": "^0.9.43",
+		"@baseai/core": "workspace:*",
 		"dotenv": "^16.4.5"
 	},
 	"devDependencies": {
-		"baseai": "^0.9.44",
-		"tsx": "^4.19.0"
+		"@types/node": "^22.6.1",
+		"baseai": "workspace:*",
+		"tsx": "^4.19.0",
+		"typescript": "^5.6.2"
 	}
 }

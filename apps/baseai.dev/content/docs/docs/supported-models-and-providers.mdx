@@ -170,12 +170,77 @@ Sonar Chat Completions is now [**Agent API**](https://docs.perplexity.ai/docs/ag
 
 The following legacy Perplexity Sonar identifiers remain routed through Chat Completions. Existing Pipes are not migrated automatically.
 
-- `perplexity:llama-3.1-sonar-huge-128k-online`
-- `perplexity:llama-3.1-sonar-large-128k-online`
-- `perplexity:llama-3.1-sonar-small-128k-online`
-- `perplexity:llama-3.1-sonar-large-128k-chat`
-- `perplexity:llama-3.1-sonar-small-128k-chat`
+<ul>
+	<li><code>perplexity:llama-3.1-sonar-huge-128k-online</code></li>
+	<li><code>perplexity:llama-3.1-sonar-large-128k-online</code></li>
+	<li><code>perplexity:llama-3.1-sonar-small-128k-online</code></li>
+	<li><code>perplexity:llama-3.1-sonar-large-128k-chat</code></li>
+	<li><code>perplexity:llama-3.1-sonar-small-128k-chat</code></li>
+</ul>
 </Warning>
+
+#### Migrate a BaseAI Pipe
+
+Choose an Agent alias by workload from the table above; the historical BaseAI identifiers do not have an exact one-to-one mapping to today's Sonar product names. Existing Pipes are not changed automatically.
+
+For example, keep the rest of the Pipe configuration and replace its legacy model ID with the preset that fits the workload.
+
+Before:
+
+```ts
+const researchPipe = (): PipeI => ({
+	model: 'perplexity:llama-3.1-sonar-small-128k-online',
+	max_tokens: 1000,
+	temperature: 0.7,
+	top_p: 1,
+	// ...the remaining Pipe fields
+});
+```
+
+After:
+
+```ts
+const researchPipe = (): PipeI => ({
+	model: 'perplexity:fast',
+	max_tokens: 1000,
+	temperature: 0.7,
+	top_p: 1,
+	// ...the remaining Pipe fields
+});
+```
+
+BaseAI requires `max_tokens`, `temperature`, and `top_p`. Agent API receives them as request values (`max_tokens` becomes `max_output_tokens`), so they override the selected preset's tuned defaults. Review these values while migrating.
+
+Set both keys in the local caller's `.env` file:
+
+```bash
+LANGBASE_API_KEY="your-langbase-key"
+PERPLEXITY_API_KEY="your-perplexity-key"
+```
+
+`@baseai/core` reads `PERPLEXITY_API_KEY` from the local process and sends it as `llmApiKey` to the BaseAI server on `localhost:9000`; the local server uses it only for the Perplexity provider request. `LANGBASE_API_KEY` is read by the Pipe configuration. Keep both values server-side and out of source control.
+
+From the repository root, build and run the workspace-linked Node example:
+
+```bash
+pnpm install
+pnpm --filter example-nodejs check
+pnpm --filter example-nodejs baseai dev
+```
+
+Then run either request in a second terminal:
+
+```bash
+# Non-streaming answer plus citation metadata
+pnpm --filter example-nodejs pipe.perplexity.agent
+
+# Streaming answer text through Pipe.run({ stream: true })
+pnpm --filter example-nodejs pipe.perplexity.agent.stream
+```
+
+This PR changes only the public BaseAI local runtime; Langbase-hosted execution and rollout are outside its scope. Custom tools and tool-result replay, streamed citation metadata, background mode, file output, explicit Agent models, `xhigh`, and `wide-research` are not supported in this integration.
+
+Read the [migration overview](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview) for workload guidance and the [field-by-field migration guide](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/how-to) for request, response, citation, and streaming changes.
 
 | Legacy model                                                                                             | Provider   | Owner | Context | Cost*                                      |
 |----------------------------------------------------------------------------------------------------------|------------|-------|---------|--------------------------------------------|
