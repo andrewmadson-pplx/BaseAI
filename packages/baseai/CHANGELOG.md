@@ -9,7 +9,7 @@
 -   Deprecate the five legacy `perplexity:llama-3.1-sonar-*` identifiers ahead
     of their scheduled September 27, 2026 shutdown. Existing Pipes are not
     migrated automatically; follow the [Perplexity Sonar migration
-    guide](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/how-to).
+    guide](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview).
 
 ## 0.9.44
 
