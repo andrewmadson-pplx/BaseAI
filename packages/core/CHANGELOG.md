@@ -1,5 +1,12 @@
 # `baseai` SDK
 
+## Unreleased
+
+### Minor Changes
+
+-   Add the `perplexity:fast`, `perplexity:low`, `perplexity:medium`, and
+    `perplexity:high` model identifiers for local Perplexity Agent API Pipes.
+
 ## 0.9.43
 
 ### Patch Changes
