@@ -7,7 +7,7 @@ tags:
     - llm providers
     - models
 published: 2024-09-24
-modified: 2024-09-24
+modified: 2026-08-28
 ---
 
 # Supported LLM models and providers
@@ -150,7 +150,32 @@ Learn more about [using Ollama models](/docs/guides/using-ollama-models) in Base
 
 ### Perplexity
 
-| Model                                                                                                    | Provider   | Owner | Context | Cost*                                      |
+Use a Perplexity Agent API preset for new local BaseAI integrations. Presets select and evolve their underlying model and built-in search tools dynamically.
+
+| Agent preset | BaseAI ID                                  | Best for                                         | Cost    |
+|--------------|--------------------------------------------|--------------------------------------------------|---------|
+| Fast         | <InlineCopy content="perplexity:fast" />   | Quick lookups and short summaries with citations | Dynamic |
+| Low          | <InlineCopy content="perplexity:low" />    | Everyday, light multi-step research              | Dynamic |
+| Medium       | <InlineCopy content="perplexity:medium" /> | Multi-hop research across many sources           | Dynamic |
+| High         | <InlineCopy content="perplexity:high" />   | Deep research and broad source coverage          | Dynamic |
+
+This first Agent integration supports system, user, and assistant text; non-streaming responses; streaming answer text; and preset search. Custom tools, tool-result replay, background runs, file outputs, and explicit Agent model selection are not supported. Citation metadata is included on non-streaming responses; streamed citation metadata is not exposed because the existing BaseAI stream chunk contract has no compatible citation field.
+
+<Note>
+These Agent identifiers are supported by the public BaseAI local runtime. Langbase-hosted model availability and rollout are managed separately.
+</Note>
+
+<Warning>
+The following legacy Perplexity Sonar identifiers use Chat Completions and are scheduled to stop working on **September 27, 2026**. Existing Pipes are not migrated automatically. Use a Perplexity Agent preset and follow the [Perplexity Sonar migration guide](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/how-to).
+
+- `perplexity:llama-3.1-sonar-huge-128k-online`
+- `perplexity:llama-3.1-sonar-large-128k-online`
+- `perplexity:llama-3.1-sonar-small-128k-online`
+- `perplexity:llama-3.1-sonar-large-128k-chat`
+- `perplexity:llama-3.1-sonar-small-128k-chat`
+</Warning>
+
+| Legacy model                                                                                             | Provider   | Owner | Context | Cost*                                      |
 |----------------------------------------------------------------------------------------------------------|------------|-------|---------|--------------------------------------------|
 | llama-3.1-sonar-huge-128k-online   <br/> ID:  <InlineCopy content="perplexity:llama-3.1-sonar-huge-128k-online" />  | Perplexity | Meta  | 127,072 | $5            prompt <br/> $5  completion  |
 | llama-3.1-sonar-large-128k-online  <br/> ID:  <InlineCopy content="perplexity:llama-3.1-sonar-large-128k-online" /> | Perplexity | Meta  | 127,072 | $1            prompt <br/> $1 completion   |

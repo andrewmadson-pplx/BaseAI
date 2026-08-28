@@ -22,6 +22,7 @@ npx baseai pipe
 npm run pipe.run
 npm run pipe.run.stream
 npm run pipe.run.stream.loop
+npm run pipe.perplexity.agent
 npm run pipe.generate.text
 npm run pipe.stream.text
 ```

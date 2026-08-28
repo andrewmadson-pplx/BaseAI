@@ -10,6 +10,7 @@
 		"pipe.run": "npx tsx ./examples/pipe.run.ts",
 		"pipe.run.stream": "npx tsx ./examples/pipe.run.stream.ts",
 		"pipe.run.stream.loop": "npx tsx ./examples/pipe.run.stream.loop.ts",
+		"pipe.perplexity.agent": "npx tsx ./examples/pipe.perplexity-agent.ts",
 		"pipe.generate.text": "npx tsx ./examples/pipe.generate.text.ts",
 		"pipe.stream.text": "npx tsx ./examples/pipe.stream.text.ts"
 	},
