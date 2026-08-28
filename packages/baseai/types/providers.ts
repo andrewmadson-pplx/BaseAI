@@ -98,6 +98,8 @@ export interface ProviderAPIConfig {
 	'stream-complete'?: string;
 	/** The endpoint for the 'chatComplete' function. */
 	chatComplete?: string;
+	/** The endpoint for the Perplexity Agent API operation. */
+	agentResponse?: string;
 	/** The endpoint for the 'stream-chatComplete' function. */
 	'stream-chatComplete'?: string;
 	/** The endpoint for the 'embed' function. */
@@ -121,6 +123,7 @@ export interface ProviderAPIConfig {
 export type endpointStrings =
 	| 'complete'
 	| 'chatComplete'
+	| 'agentResponse'
 	| 'embed'
 	| 'rerank'
 	| 'moderate'

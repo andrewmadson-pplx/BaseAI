@@ -51,7 +51,7 @@ const RequestBodySchema = z.object({
 type RequestBody = z.infer<typeof RequestBodySchema>;
 
 // Helper functions
-const validateRequestBody = (body: unknown): RequestBody => {
+export const validateRequestBody = (body: unknown): RequestBody => {
 	const result = RequestBodySchema.safeParse(body);
 	if (!result.success) {
 		throw new ApiErrorZod({

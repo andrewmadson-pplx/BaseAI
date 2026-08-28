@@ -158,7 +158,8 @@ export async function callLLM({
 				pipe,
 				messages,
 				llmApiKey,
-				stream
+				stream,
+				paramsTools
 			});
 		}
 

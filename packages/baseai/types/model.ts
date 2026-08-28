@@ -67,6 +67,10 @@ export type FireworksAIModels =
 	| 'fireworks:llama-v3p3-70b-instruct';
 
 export type PerplexityModels =
+	| 'perplexity:fast'
+	| 'perplexity:low'
+	| 'perplexity:medium'
+	| 'perplexity:high'
 	| 'perplexity:llama-3.1-sonar-huge-128k-online'
 	| 'perplexity:llama-3.1-sonar-large-128k-online'
 	| 'perplexity:llama-3.1-sonar-small-128k-online'

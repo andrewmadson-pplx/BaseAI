@@ -25,9 +25,21 @@ export interface ToolCallResult {
 	function: Function;
 }
 
+export interface CitationSource {
+	startIndex?: number;
+	endIndex?: number;
+	uri?: string;
+	license?: string;
+}
+
+export interface CitationMetadata {
+	citationSources?: CitationSource[];
+}
+
 export interface Message {
 	role: MessageRole;
 	content: string | null;
+	citationMetadata?: CitationMetadata;
 	name?: string;
 	tool_call_id?: string;
 	tool_calls?: ToolCallResult[];

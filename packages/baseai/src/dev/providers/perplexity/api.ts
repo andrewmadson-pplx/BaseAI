@@ -8,7 +8,8 @@ const PerplexityAIApiConfig: ProviderAPIConfig = {
 			accept: 'application/json'
 		};
 	},
-	chatComplete: '/chat/completions'
+	chatComplete: '/chat/completions',
+	agentResponse: '/v1/agent'
 };
 
 export default PerplexityAIApiConfig;

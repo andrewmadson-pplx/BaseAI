@@ -16,9 +16,9 @@ export const X_AI: string = 'xAI';
 interface Model {
 	id: string;
 	provider: string;
-	promptCost: number;
-	completionCost: number;
-	requestCost?: number;
+	promptCost: number | null;
+	completionCost: number | null;
+	requestCost?: number | null;
 }
 
 interface ModelsByProviderInclCosts {
@@ -377,6 +377,34 @@ export const modelsByProvider: ModelsByProviderInclCosts = {
 		},
 	],
 	[PERPLEXITY]: [
+		{
+			id: 'fast',
+			provider: PERPLEXITY,
+			promptCost: null,
+			completionCost: null,
+			requestCost: null,
+		},
+		{
+			id: 'low',
+			provider: PERPLEXITY,
+			promptCost: null,
+			completionCost: null,
+			requestCost: null,
+		},
+		{
+			id: 'medium',
+			provider: PERPLEXITY,
+			promptCost: null,
+			completionCost: null,
+			requestCost: null,
+		},
+		{
+			id: 'high',
+			provider: PERPLEXITY,
+			promptCost: null,
+			completionCost: null,
+			requestCost: null,
+		},
 		{
 			id: 'llama-3.1-sonar-huge-128k-online',
 			provider: PERPLEXITY,

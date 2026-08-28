@@ -3,22 +3,39 @@ import transformToProviderRequest from '../utils/provider-handlers/transfrom-to-
 import { handleProviderRequest } from '../utils/provider-handlers/provider-request-handler';
 
 import { PERPLEXITY } from '../data/models';
+import {
+	callPerplexityAgent,
+	getPerplexityTransport
+} from '../providers/perplexity/agentResponse';
 import { handleLlmError } from './utils';
 import type { Message, Pipe } from 'types/pipe';
 import type { ModelParams } from 'types/providers';
+import type { PipeTool } from 'types/tools';
 
 export async function callPerplexity({
 	pipe,
 	messages,
 	llmApiKey,
-	stream
+	stream,
+	paramsTools
 }: {
 	pipe: Pipe;
 	llmApiKey: string;
 	stream: boolean;
 	messages: Message[];
+	paramsTools?: PipeTool[];
 }) {
 	try {
+		if (getPerplexityTransport(pipe.model) === 'agentResponse') {
+			return await callPerplexityAgent({
+				pipe,
+				messages,
+				llmApiKey,
+				stream,
+				paramsTools
+			});
+		}
+
 		const modelParams = buildModelParams(pipe, stream, messages);
 
 		// Transform params according to provider's format
