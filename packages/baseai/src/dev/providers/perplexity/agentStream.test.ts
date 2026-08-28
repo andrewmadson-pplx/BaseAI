@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { transformPerplexityAgentStream } from './agentResponse';
+import documentedAgentStream from './fixtures/documented-agent-stream.json';
 
 const created = {
 	type: 'response.created',
@@ -7,7 +8,8 @@ const created = {
 	response: {
 		id: 'resp_stream_123',
 		created_at: 1787928000,
-		status: 'in_progress'
+		status: 'in_progress',
+		model: 'openai/gpt-5.4-mini'
 	}
 };
 
@@ -26,7 +28,8 @@ const completed = (sequenceNumber = 2) => ({
 	response: {
 		id: 'resp_stream_123',
 		created_at: 1787928000,
-		status: 'completed'
+		status: 'completed',
+		model: 'openai/gpt-5.4-mini'
 	}
 });
 
@@ -76,10 +79,7 @@ describe('Perplexity Agent stream reducer', () => {
 		async lineEnding => {
 			const output = await readText(
 				transformPerplexityAgentStream(
-					responseFromText(
-						sse([created, delta('Hello'), completed()], lineEnding)
-					),
-					'perplexity:fast'
+					responseFromText(sse(documentedAgentStream, lineEnding))
 				)
 			);
 
@@ -94,7 +94,7 @@ describe('Perplexity Agent stream reducer', () => {
 				finish_reason: null
 			});
 			expect(JSON.parse(frames[1]).choices[0].delta).toEqual({
-				content: 'Hello'
+				content: 'A model card'
 			});
 			expect(JSON.parse(frames[2]).choices[0]).toEqual({
 				delta: {},
@@ -102,6 +102,9 @@ describe('Perplexity Agent stream reducer', () => {
 				finish_reason: 'stop'
 			});
 			expect(frames[3]).toBe('[DONE]');
+			for (const frame of frames.slice(0, 3)) {
+				expect(JSON.parse(frame).model).toBe('openai/gpt-5.4-mini');
+			}
 			expect(output.match(/finish_reason":"stop"/g)).toHaveLength(1);
 			expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
 		}
@@ -118,9 +121,7 @@ describe('Perplexity Agent stream reducer', () => {
 			source.slice(splitAt + 3)
 		]);
 
-		const output = await readText(
-			transformPerplexityAgentStream(response, 'perplexity:medium')
-		);
+		const output = await readText(transformPerplexityAgentStream(response));
 		expect(output).toContain('café 🛰️');
 		expect(output).not.toContain('�');
 	});
@@ -136,7 +137,7 @@ describe('Perplexity Agent stream reducer', () => {
 		);
 
 		await expect(
-			readText(transformPerplexityAgentStream(response, 'perplexity:low'))
+			readText(transformPerplexityAgentStream(response))
 		).resolves.toContain('Hello');
 	});
 
@@ -156,12 +157,7 @@ describe('Perplexity Agent stream reducer', () => {
 			'data: [DONE]\n\n';
 
 		await expect(
-			readText(
-				transformPerplexityAgentStream(
-					responseFromText(source),
-					'perplexity:high'
-				)
-			)
+			readText(transformPerplexityAgentStream(responseFromText(source)))
 		).resolves.toContain('Named event');
 	});
 
@@ -174,10 +170,10 @@ describe('Perplexity Agent stream reducer', () => {
 		);
 
 		await expect(
-			readText(
-				transformPerplexityAgentStream(response, 'perplexity:fast')
-			)
-		).rejects.toThrow('Could not parse SSE message as JSON');
+			readText(transformPerplexityAgentStream(response))
+		).rejects.toThrow(
+			'Could not parse Perplexity Agent SSE message as JSON'
+		);
 		expect(consoleError).not.toHaveBeenCalled();
 		consoleError.mockRestore();
 	});
@@ -187,31 +183,21 @@ describe('Perplexity Agent stream reducer', () => {
 		async data => {
 			const response = responseFromText(`data: ${data}\n\n`);
 			await expect(
-				readText(
-					transformPerplexityAgentStream(response, 'perplexity:fast')
-				)
+				readText(transformPerplexityAgentStream(response))
 			).rejects.toThrow('stream event is malformed');
 		}
 	);
 
-	it.each([
-		{
+	it('fails on response.failed without success terminal output', async () => {
+		const terminal = {
 			type: 'response.failed',
 			sequence_number: 1,
 			error: { message: 'upstream failed' }
-		},
-		{
-			type: 'response.incomplete',
-			sequence_number: 1,
-			response: { error: { message: 'incomplete response' } }
-		}
-	])('fails on $type without success terminal output', async terminal => {
+		};
 		const response = responseFromText(sse([created, terminal]));
 		await expect(
-			readText(
-				transformPerplexityAgentStream(response, 'perplexity:fast')
-			)
-		).rejects.toThrow();
+			readText(transformPerplexityAgentStream(response))
+		).rejects.toThrow('upstream failed');
 	});
 
 	it('fails on duplicate terminal events', async () => {
@@ -219,9 +205,7 @@ describe('Perplexity Agent stream reducer', () => {
 			sse([created, delta('Hello'), completed(), completed(3)])
 		);
 		await expect(
-			readText(
-				transformPerplexityAgentStream(response, 'perplexity:fast')
-			)
+			readText(transformPerplexityAgentStream(response))
 		).rejects.toThrow('after a terminal event');
 	});
 
@@ -230,10 +214,17 @@ describe('Perplexity Agent stream reducer', () => {
 			sse([created, delta('Hello', 3), completed(2)])
 		);
 		await expect(
-			readText(
-				transformPerplexityAgentStream(response, 'perplexity:fast')
-			)
+			readText(transformPerplexityAgentStream(response))
 		).rejects.toThrow('duplicate or out of order');
+	});
+
+	it('requires a sequence number on every event', async () => {
+		const response = responseFromText(
+			sse([{ ...created, sequence_number: undefined }])
+		);
+		await expect(
+			readText(transformPerplexityAgentStream(response))
+		).rejects.toThrow('sequence is malformed');
 	});
 
 	it('fails on out-of-order output indexes', async () => {
@@ -250,9 +241,7 @@ describe('Perplexity Agent stream reducer', () => {
 			sse([created, laterOutput, earlierOutput, completed(3)])
 		);
 		await expect(
-			readText(
-				transformPerplexityAgentStream(response, 'perplexity:fast')
-			)
+			readText(transformPerplexityAgentStream(response))
 		).rejects.toThrow('text indexes are out of order');
 	});
 
@@ -263,14 +252,30 @@ describe('Perplexity Agent stream reducer', () => {
 			response: {
 				id: 'resp_stream_123',
 				created_at: 1787928001,
-				status: 'in_progress'
+				status: 'in_progress',
+				model: 'openai/gpt-5.4-mini'
 			}
 		};
 		const response = responseFromText(sse([created, changedIdentity]));
 		await expect(
-			readText(
-				transformPerplexityAgentStream(response, 'perplexity:fast')
-			)
+			readText(transformPerplexityAgentStream(response))
+		).rejects.toThrow('response identity changed');
+	});
+
+	it('fails when the executing model changes', async () => {
+		const changedModel = {
+			type: 'response.in_progress',
+			sequence_number: 1,
+			response: {
+				id: 'resp_stream_123',
+				created_at: 1787928000,
+				status: 'in_progress',
+				model: 'anthropic/claude-sonnet-4-6'
+			}
+		};
+		const response = responseFromText(sse([created, changedModel]));
+		await expect(
+			readText(transformPerplexityAgentStream(response))
 		).rejects.toThrow('response identity changed');
 	});
 
@@ -279,27 +284,21 @@ describe('Perplexity Agent stream reducer', () => {
 			sse([created, delta('partial')], '\n', false)
 		);
 		await expect(
-			readText(
-				transformPerplexityAgentStream(prematureEOF, 'perplexity:fast')
-			)
+			readText(transformPerplexityAgentStream(prematureEOF))
 		).rejects.toThrow('before response.completed');
 
 		const prematureDone = responseFromText(
 			sse([created, delta('partial')])
 		);
 		await expect(
-			readText(
-				transformPerplexityAgentStream(prematureDone, 'perplexity:fast')
-			)
+			readText(transformPerplexityAgentStream(prematureDone))
 		).rejects.toThrow('before response.completed');
 	});
 
 	it('fails when a completed stream contains no text', async () => {
 		const response = responseFromText(sse([created, completed(1)]));
 		await expect(
-			readText(
-				transformPerplexityAgentStream(response, 'perplexity:fast')
-			)
+			readText(transformPerplexityAgentStream(response))
 		).rejects.toThrow('without output text');
 	});
 });

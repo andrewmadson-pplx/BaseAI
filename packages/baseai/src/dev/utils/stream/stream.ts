@@ -47,13 +47,16 @@ export class Stream<Item> implements AsyncIterable<Item> {
 
 						try {
 							data = JSON.parse(sse.data);
-						} catch {
-							throw new Error(
-								'Could not parse SSE message as JSON'
+						} catch (e) {
+							console.error(
+								`Could not parse message into JSON:`,
+								sse.data
 							);
+							console.error(`From chunk:`, sse.raw);
+							throw e;
 						}
 
-						if (data && data.error && !data.type) {
+						if (data && data.error) {
 							throw new Error(data.error);
 						}
 
@@ -62,10 +65,13 @@ export class Stream<Item> implements AsyncIterable<Item> {
 						let data;
 						try {
 							data = JSON.parse(sse.data);
-						} catch {
-							throw new Error(
-								'Could not parse SSE message as JSON'
+						} catch (e) {
+							console.error(
+								`Could not parse message into JSON:`,
+								sse.data
 							);
+							console.error(`From chunk:`, sse.raw);
+							throw e;
 						}
 						// TODO: Is this where the error should be thrown?
 						if (sse.event == 'error') {
@@ -231,9 +237,6 @@ export async function* _iterSSEMessages(
 		const sse = sseDecoder.decode(line);
 		if (sse) yield sse;
 	}
-
-	const finalEvent = sseDecoder.flush();
-	if (finalEvent) yield finalEvent;
 }
 
 /**
@@ -281,7 +284,7 @@ function findDoubleNewlineIndex(buffer: Uint8Array): number {
 	const newline = 0x0a; // \n
 	const carriage = 0x0d; // \r
 
-	for (let i = 0; i < buffer.length - 1; i++) {
+	for (let i = 0; i < buffer.length - 2; i++) {
 		if (buffer[i] === newline && buffer[i + 1] === newline) {
 			// \n\n
 			return i + 2;
@@ -358,20 +361,6 @@ class SSEDecoder {
 
 		return null;
 	}
-
-	flush(): ServerSentEvent | null {
-		if (!this.event && !this.data.length) return null;
-
-		const sse: ServerSentEvent = {
-			event: this.event,
-			data: this.data.join('\n'),
-			raw: this.chunks
-		};
-		this.event = null;
-		this.data = [];
-		this.chunks = [];
-		return sse;
-	}
 }
 
 /**
@@ -442,10 +431,25 @@ class LineDecoder {
 		if (bytes == null) return '';
 		if (typeof bytes === 'string') return bytes;
 
+		// Node:
+		if (typeof Buffer !== 'undefined') {
+			if (bytes instanceof Buffer) {
+				return bytes.toString();
+			}
+			if (bytes instanceof Uint8Array) {
+				return Buffer.from(bytes).toString();
+			}
+
+			throw new Error(
+				`Unexpected: received non-Uint8Array (${bytes.constructor.name}) stream chunk in an environment with a global "Buffer" defined, which this library assumes to be Node. Please report this error.`
+			);
+		}
+
+		// Browser
 		if (typeof TextDecoder !== 'undefined') {
 			if (bytes instanceof Uint8Array || bytes instanceof ArrayBuffer) {
 				this.textDecoder ??= new TextDecoder('utf8');
-				return this.textDecoder.decode(bytes, { stream: true });
+				return this.textDecoder.decode(bytes);
 			}
 
 			throw new Error(
@@ -461,9 +465,6 @@ class LineDecoder {
 	}
 
 	flush(): string[] {
-		const remainingText = this.textDecoder?.decode() || '';
-		if (remainingText) this.buffer.push(remainingText);
-
 		if (!this.buffer.length && !this.trailingCR) {
 			return [];
 		}

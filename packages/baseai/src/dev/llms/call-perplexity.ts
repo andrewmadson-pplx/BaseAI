@@ -8,6 +8,7 @@ import {
 	getPerplexityTransport
 } from '../providers/perplexity/agentResponse';
 import { handleLlmError } from './utils';
+import { ApiError } from '../hono/errors';
 import type { Message, Pipe } from 'types/pipe';
 import type { ModelParams } from 'types/providers';
 import type { PipeTool } from 'types/tools';
@@ -54,6 +55,7 @@ export async function callPerplexity({
 			transformedRequestParams
 		});
 	} catch (error: any) {
+		if (error instanceof ApiError) throw error;
 		handleLlmError({ error, provider: PERPLEXITY });
 	}
 }

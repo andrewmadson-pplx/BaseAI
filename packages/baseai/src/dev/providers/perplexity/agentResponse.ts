@@ -1,15 +1,15 @@
 import { PERPLEXITY } from '@/dev/data/models';
 import { ApiError } from '@/dev/hono/errors';
-import { Stream } from '@/dev/utils/stream/stream';
+import type { StatusCode } from 'hono/utils/http-status';
 import type { Pipe } from 'types/pipe';
 import type {
 	ChatCompletionResponse,
 	CitationSource,
-	ContentType,
 	ProviderMessage
 } from 'types/providers';
 import type { PipeTool } from 'types/tools';
 import PerplexityAIApiConfig from './api';
+import { iterateAgentSSE } from './agentSSE';
 
 export const PERPLEXITY_AGENT_PRESETS = [
 	'fast',
@@ -20,14 +20,10 @@ export const PERPLEXITY_AGENT_PRESETS = [
 
 export type PerplexityAgentPreset = (typeof PERPLEXITY_AGENT_PRESETS)[number];
 
-type AgentInputContentPart =
-	| { type: 'input_text'; text: string }
-	| { type: 'input_image'; image_url: string };
-
 interface AgentInputMessage {
 	type: 'message';
 	role: 'system' | 'user' | 'assistant';
-	content: string | AgentInputContentPart[];
+	content: string;
 }
 
 export interface PerplexityAgentRequest {
@@ -109,13 +105,11 @@ interface AgentStreamEvent {
 	content_index?: number;
 	delta?: string;
 	error?: AgentErrorInfo;
-	event?: string;
 	item_id?: string;
 	output_index?: number;
 	response?: PerplexityAgentResponse;
 	sequence_number?: number;
 	type?: string;
-	data?: AgentStreamEvent;
 }
 
 interface AgentCallOptions {
@@ -207,34 +201,6 @@ function validateAgentPipeFields(
 	}
 }
 
-function convertContentPart(
-	part: ContentType,
-	messageIndex: number,
-	partIndex: number
-): AgentInputContentPart {
-	const path = `messages[${messageIndex}].content[${partIndex}]`;
-	if (part.type === 'text' || part.type === 'input_text') {
-		if (typeof part.text !== 'string') {
-			unsupportedField(`${path}.text`, 'text content must be a string');
-		}
-		return { type: 'input_text', text: part.text };
-	}
-
-	if (part.type === 'image_url' || part.type === 'input_image') {
-		const image = part.image_url as { url?: string } | string | undefined;
-		const imageURL = typeof image === 'string' ? image : image?.url;
-		if (!imageURL) {
-			unsupportedField(
-				`${path}.image_url`,
-				'an HTTPS URL or data URI is required'
-			);
-		}
-		return { type: 'input_image', image_url: imageURL };
-	}
-
-	unsupportedField(`${path}.type`, `content type "${part.type}"`);
-}
-
 function convertMessage(
 	message: ProviderMessage,
 	messageIndex: number
@@ -264,20 +230,14 @@ function convertMessage(
 	if (message.name !== undefined) {
 		unsupportedField(`${path}.name`, 'named messages are unsupported');
 	}
-	if (message.content === null || message.content === undefined) {
-		unsupportedField(`${path}.content`, 'message content is required');
+	if (typeof message.content !== 'string') {
+		unsupportedField(`${path}.content`, 'message content must be a string');
 	}
-
-	const content = Array.isArray(message.content)
-		? message.content.map((part, partIndex) =>
-				convertContentPart(part, messageIndex, partIndex)
-			)
-		: message.content;
 
 	return {
 		type: 'message',
 		role: message.role as AgentInputMessage['role'],
-		content
+		content: message.content
 	};
 }
 
@@ -417,8 +377,7 @@ function responseFailureMessage(response: PerplexityAgentResponse): string {
 }
 
 export function transformPerplexityAgentResponse(
-	response: PerplexityAgentResponse,
-	requestedModel: string
+	response: PerplexityAgentResponse
 ): ChatCompletionResponse & { provider: string } {
 	const status = response.status;
 	const isTokenLimit =
@@ -429,6 +388,9 @@ export function transformPerplexityAgentResponse(
 	}
 	if (!response.id || typeof response.created_at !== 'number') {
 		throw new Error('Invalid Perplexity Agent response: missing identity');
+	}
+	if (!response.model || typeof response.model !== 'string') {
+		throw new Error('Invalid Perplexity Agent response: missing model');
 	}
 	if (!Array.isArray(response.output)) {
 		throw new Error('Invalid Perplexity Agent response: missing output');
@@ -441,16 +403,30 @@ export function transformPerplexityAgentResponse(
 		);
 	}
 
-	const inputTokens = response.usage?.input_tokens ?? 0;
-	const outputTokens = response.usage?.output_tokens ?? 0;
-	const totalTokens =
-		response.usage?.total_tokens ?? inputTokens + outputTokens;
+	let usage: ChatCompletionResponse['usage'];
+	if (response.usage !== undefined) {
+		const { input_tokens, output_tokens, total_tokens } = response.usage;
+		if (
+			![input_tokens, output_tokens, total_tokens].every(
+				tokens => Number.isInteger(tokens) && (tokens as number) >= 0
+			)
+		) {
+			throw new Error(
+				'Invalid Perplexity Agent response: malformed usage'
+			);
+		}
+		usage = {
+			prompt_tokens: input_tokens as number,
+			completion_tokens: output_tokens as number,
+			total_tokens: total_tokens as number
+		};
+	}
 
 	return {
 		id: response.id,
 		object: AGENT_OBJECT,
 		created: response.created_at,
-		model: requestedModel,
+		model: response.model,
 		provider: PERPLEXITY,
 		choices: [
 			{
@@ -466,22 +442,8 @@ export function transformPerplexityAgentResponse(
 				finish_reason: isTokenLimit ? 'length' : 'stop'
 			}
 		],
-		usage: {
-			prompt_tokens: inputTokens,
-			completion_tokens: outputTokens,
-			total_tokens: totalTokens
-		}
+		...(usage && { usage })
 	};
-}
-
-function normalizeStreamEvent(event: AgentStreamEvent): AgentStreamEvent {
-	if (event.event && event.data) {
-		return {
-			...event.data,
-			type: event.data.type || event.event
-		};
-	}
-	return event;
 }
 
 function streamError(event: AgentStreamEvent): Error {
@@ -523,19 +485,16 @@ function makeStreamChunk({
 
 export function transformPerplexityAgentStream(
 	response: Response,
-	requestedModel: string,
 	abortController = new AbortController()
 ): ReadableStream<Uint8Array> {
-	const events = Stream.fromSSEResponse<AgentStreamEvent>(
-		response,
-		abortController
-	);
+	const events = iterateAgentSSE<AgentStreamEvent>(response, abortController);
 	const encoder = new TextEncoder();
 
 	return new ReadableStream<Uint8Array>({
 		async start(controller) {
 			let responseId: string | undefined;
 			let createdAt: number | undefined;
+			let executingModel: string | undefined;
 			let lastSequence = -1;
 			let terminalSeen = false;
 			let roleEmitted = false;
@@ -555,7 +514,7 @@ export function transformPerplexityAgentStream(
 							'Perplexity Agent stream event is malformed'
 						);
 					}
-					const event = normalizeStreamEvent(rawEvent);
+					const event = rawEvent;
 					if (typeof event.type !== 'string') {
 						throw new Error(
 							'Perplexity Agent stream event is malformed'
@@ -567,14 +526,20 @@ export function transformPerplexityAgentStream(
 						);
 					}
 
-					if (typeof event.sequence_number === 'number') {
-						if (event.sequence_number <= lastSequence) {
-							throw new Error(
-								'Perplexity Agent stream sequence is duplicate or out of order'
-							);
-						}
-						lastSequence = event.sequence_number;
+					if (
+						!Number.isInteger(event.sequence_number) ||
+						(event.sequence_number as number) < 0
+					) {
+						throw new Error(
+							'Perplexity Agent stream sequence is malformed'
+						);
 					}
+					if ((event.sequence_number as number) <= lastSequence) {
+						throw new Error(
+							'Perplexity Agent stream sequence is duplicate or out of order'
+						);
+					}
+					lastSequence = event.sequence_number as number;
 
 					if (
 						event.type === 'response.created' ||
@@ -582,7 +547,13 @@ export function transformPerplexityAgentStream(
 					) {
 						const id = event.response?.id;
 						const created = event.response?.created_at;
-						if (!id || typeof created !== 'number') {
+						const model = event.response?.model;
+						if (
+							!id ||
+							typeof created !== 'number' ||
+							!model ||
+							typeof model !== 'string'
+						) {
 							throw new Error(
 								'Perplexity Agent stream identity event is malformed'
 							);
@@ -597,13 +568,23 @@ export function transformPerplexityAgentStream(
 								'Perplexity Agent stream response identity changed'
 							);
 						}
+						if (executingModel && executingModel !== model) {
+							throw new Error(
+								'Perplexity Agent stream response identity changed'
+							);
+						}
 						responseId = id;
 						createdAt = created;
+						executingModel = model;
 						continue;
 					}
 
 					if (event.type === 'response.output_text.delta') {
-						if (!responseId || createdAt === undefined) {
+						if (
+							!responseId ||
+							createdAt === undefined ||
+							!executingModel
+						) {
 							throw new Error(
 								'Perplexity Agent stream emitted text before identity'
 							);
@@ -646,7 +627,7 @@ export function transformPerplexityAgentStream(
 									makeStreamChunk({
 										id: responseId,
 										created: createdAt,
-										model: requestedModel,
+										model: executingModel,
 										delta: {
 											role: 'assistant',
 											content: ''
@@ -663,7 +644,7 @@ export function transformPerplexityAgentStream(
 								makeStreamChunk({
 									id: responseId,
 									created: createdAt,
-									model: requestedModel,
+									model: executingModel,
 									delta: { content: event.delta },
 									finishReason: null
 								})
@@ -673,11 +654,7 @@ export function transformPerplexityAgentStream(
 						continue;
 					}
 
-					if (
-						event.type === 'response.failed' ||
-						event.type === 'response.incomplete' ||
-						event.type === 'response.cancelled'
-					) {
+					if (event.type === 'response.failed') {
 						terminalSeen = true;
 						throw streamError(event);
 					}
@@ -689,7 +666,8 @@ export function transformPerplexityAgentStream(
 							!responseId ||
 							createdAt === undefined ||
 							event.response.id !== responseId ||
-							event.response.created_at !== createdAt
+							event.response.created_at !== createdAt ||
+							event.response.model !== executingModel
 						) {
 							throw new Error(
 								'Perplexity Agent stream completion event is malformed'
@@ -705,7 +683,12 @@ export function transformPerplexityAgentStream(
 						'Perplexity Agent stream ended before response.completed'
 					);
 				}
-				if (!textSeen || !responseId || createdAt === undefined) {
+				if (
+					!textSeen ||
+					!responseId ||
+					createdAt === undefined ||
+					!executingModel
+				) {
 					throw new Error(
 						'Perplexity Agent stream completed without output text'
 					);
@@ -716,7 +699,7 @@ export function transformPerplexityAgentStream(
 						makeStreamChunk({
 							id: responseId,
 							created: createdAt,
-							model: requestedModel,
+							model: executingModel,
 							delta: {},
 							finishReason: 'stop'
 						})
@@ -725,6 +708,7 @@ export function transformPerplexityAgentStream(
 				controller.enqueue(encoder.encode('data: [DONE]\n\n'));
 				controller.close();
 			} catch (error) {
+				abortController.abort();
 				controller.error(
 					error instanceof Error
 						? error
@@ -740,11 +724,42 @@ export function transformPerplexityAgentStream(
 
 async function getSafeAgentError(response: Response): Promise<string> {
 	try {
-		const body = (await response.json()) as { error?: AgentErrorInfo };
-		return body.error?.message || `HTTP ${response.status}`;
+		const body = (await response.json()) as { error?: unknown };
+		if (
+			body.error &&
+			typeof body.error === 'object' &&
+			'message' in body.error &&
+			typeof body.error.message === 'string'
+		) {
+			return body.error.message;
+		}
+		return `HTTP ${response.status}`;
 	} catch {
 		return `HTTP ${response.status}`;
 	}
+}
+
+function getAgentHttpError(status: number): {
+	code:
+		| 'BAD_REQUEST'
+		| 'UNAUTHORIZED'
+		| 'FORBIDDEN'
+		| 'NOT_FOUND'
+		| 'RATE_LIMITED'
+		| 'INTERNAL_SERVER_ERROR';
+	status: StatusCode;
+} {
+	if (status === 400 || status === 422) {
+		return { code: 'BAD_REQUEST', status: status as StatusCode };
+	}
+	if (status === 401) return { code: 'UNAUTHORIZED', status: 401 };
+	if (status === 403) return { code: 'FORBIDDEN', status: 403 };
+	if (status === 404) return { code: 'NOT_FOUND', status: 404 };
+	if (status === 429) return { code: 'RATE_LIMITED', status: 429 };
+	if (status >= 500 && status <= 599) {
+		return { code: 'INTERNAL_SERVER_ERROR', status: status as StatusCode };
+	}
+	return { code: 'BAD_REQUEST', status: status as StatusCode };
 }
 
 export async function callPerplexityAgent(
@@ -776,26 +791,31 @@ export async function callPerplexityAgent(
 	const url = getPerplexityAgentURL(baseURL);
 	const abortController = new AbortController();
 	const fetcher = options.fetcher || fetch;
-	const response = await fetcher(url, {
-		method: 'POST',
-		headers: PerplexityAIApiConfig.headers(llmApiKey),
-		body: JSON.stringify(request),
-		signal: abortController.signal
-	});
+	let response: Response;
+	try {
+		response = await fetcher(url, {
+			method: 'POST',
+			headers: PerplexityAIApiConfig.headers(llmApiKey),
+			body: JSON.stringify(request),
+			signal: abortController.signal
+		});
+	} catch {
+		throw new ApiError({
+			code: 'INTERNAL_SERVER_ERROR',
+			message: 'Unable to reach the Perplexity Agent API'
+		});
+	}
 
 	if (!response.ok) {
+		const mapped = getAgentHttpError(response.status);
 		throw new ApiError({
-			code: 'BAD_REQUEST',
+			...mapped,
 			message: await getSafeAgentError(response)
 		});
 	}
 
 	if (stream) {
-		return transformPerplexityAgentStream(
-			response,
-			pipe.model,
-			abortController
-		);
+		return transformPerplexityAgentStream(response, abortController);
 	}
 
 	let body: PerplexityAgentResponse;
@@ -804,5 +824,5 @@ export async function callPerplexityAgent(
 	} catch {
 		throw new Error('Invalid Perplexity Agent response: malformed JSON');
 	}
-	return transformPerplexityAgentResponse(body, pipe.model);
+	return transformPerplexityAgentResponse(body);
 }

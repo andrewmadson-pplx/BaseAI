@@ -8,6 +8,7 @@ import {
 	transformPerplexityAgentResponse,
 	type PerplexityAgentResponse
 } from './agentResponse';
+import documentedAgentResponse from './fixtures/documented-agent-response.json';
 
 function scaffoldPipe(overrides: Partial<Pipe> = {}): Pipe {
 	return {
@@ -41,51 +42,7 @@ const messages: ProviderMessage[] = [
 	{ role: 'assistant', content: 'I will check.' }
 ];
 
-const completedResponse: PerplexityAgentResponse = {
-	id: 'resp_agent_123',
-	object: 'response',
-	created_at: 1787928000,
-	status: 'completed',
-	model: 'perplexity/sonar',
-	output: [
-		{
-			type: 'search_results',
-			results: [
-				{ id: 1, url: 'https://example.com/one' },
-				{ id: 2, url: 'https://example.com/two' }
-			]
-		},
-		{
-			type: 'message',
-			id: 'msg_123',
-			role: 'assistant',
-			status: 'completed',
-			content: [
-				{
-					type: 'output_text',
-					text: 'Alpha[1] ',
-					annotations: [
-						{
-							type: 'url_citation',
-							start_index: 0,
-							end_index: 5,
-							url: 'https://example.com/direct'
-						}
-					]
-				},
-				{
-					type: 'output_text',
-					text: 'Beta [web:2].'
-				}
-			]
-		}
-	],
-	usage: {
-		input_tokens: 12,
-		output_tokens: 8,
-		total_tokens: 20
-	}
-};
+const completedResponse = documentedAgentResponse as PerplexityAgentResponse;
 
 describe('Perplexity Agent request adapter', () => {
 	it('maps a standard scaffold changed only to perplexity:fast', () => {
@@ -119,33 +76,6 @@ describe('Perplexity Agent request adapter', () => {
 		expect(request).not.toHaveProperty('store');
 		expect(request).not.toHaveProperty('moderate');
 		expect(request).not.toHaveProperty('tools');
-	});
-
-	it('maps supported text and image content parts', () => {
-		const request = buildPerplexityAgentRequest({
-			pipe: scaffoldPipe(),
-			messages: [
-				{
-					role: 'user',
-					content: [
-						{ type: 'text', text: 'Describe this.' },
-						{
-							type: 'image_url',
-							image_url: { url: 'https://example.com/image.png' }
-						}
-					]
-				}
-			],
-			stream: false
-		});
-
-		expect(request.input[0].content).toEqual([
-			{ type: 'input_text', text: 'Describe this.' },
-			{
-				type: 'input_image',
-				image_url: 'https://example.com/image.png'
-			}
-		]);
 	});
 
 	it('preserves store and moderate as platform behavior without forwarding them', () => {
@@ -222,7 +152,7 @@ describe('Perplexity Agent request adapter', () => {
 		).toThrow(field);
 	});
 
-	it('rejects unsupported content parts by field path', () => {
+	it('rejects non-string content by field path', () => {
 		expect(() =>
 			buildPerplexityAgentRequest({
 				pipe: scaffoldPipe(),
@@ -234,7 +164,7 @@ describe('Perplexity Agent request adapter', () => {
 				],
 				stream: false
 			})
-		).toThrow('messages[0].content[0].type');
+		).toThrow('messages[0].content');
 	});
 
 	it('rejects non-empty tools before network I/O', async () => {
@@ -348,42 +278,82 @@ describe('Perplexity Agent HTTP adapter', () => {
 			)
 		).rejects.toThrow('Preset is invalid');
 	});
+
+	it.each([
+		[400, 'BAD_REQUEST'],
+		[422, 'BAD_REQUEST'],
+		[401, 'UNAUTHORIZED'],
+		[403, 'FORBIDDEN'],
+		[404, 'NOT_FOUND'],
+		[429, 'RATE_LIMITED'],
+		[500, 'INTERNAL_SERVER_ERROR']
+	] as const)('preserves HTTP %i as %s', async (status, code) => {
+		const fetcher = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({ error: { message: 'Provider error' } }),
+					{ status }
+				)
+		);
+
+		await expect(
+			callPerplexityAgent(
+				{
+					pipe: scaffoldPipe(),
+					messages,
+					llmApiKey: 'test-key',
+					stream: false
+				},
+				{ fetcher: fetcher as typeof fetch }
+			)
+		).rejects.toMatchObject({ status, code });
+	});
+
+	it('distinguishes a transport failure from a provider bad request', async () => {
+		const fetcher = vi.fn(async () => {
+			throw new TypeError('private transport detail');
+		});
+
+		await expect(
+			callPerplexityAgent(
+				{
+					pipe: scaffoldPipe(),
+					messages,
+					llmApiKey: 'test-key',
+					stream: false
+				},
+				{ fetcher: fetcher as unknown as typeof fetch }
+			)
+		).rejects.toMatchObject({
+			status: 500,
+			code: 'INTERNAL_SERVER_ERROR',
+			message: 'Unable to reach the Perplexity Agent API'
+		});
+	});
 });
 
 describe('Perplexity Agent response adapter', () => {
 	it('maps the complete BaseAI response envelope and citations', () => {
-		expect(
-			transformPerplexityAgentResponse(
-				completedResponse,
-				'perplexity:fast'
-			)
-		).toEqual({
-			id: 'resp_agent_123',
+		const content =
+			'A model card documents intended use and limitations.[web:4]';
+		const markerStart = content.indexOf('[web:4]');
+		expect(transformPerplexityAgentResponse(completedResponse)).toEqual({
+			id: 'resp_docs_model_card',
 			object: 'chat.completion',
-			created: 1787928000,
-			model: 'perplexity:fast',
+			created: 1784292159,
+			model: 'openai/gpt-5.4-mini',
 			provider: 'Perplexity',
 			choices: [
 				{
 					message: {
 						role: 'assistant',
-						content: 'Alpha[1] Beta [web:2].',
+						content,
 						citationMetadata: {
 							citationSources: [
 								{
-									startIndex: 0,
-									endIndex: 5,
-									uri: 'https://example.com/direct'
-								},
-								{
-									startIndex: 5,
-									endIndex: 8,
-									uri: 'https://example.com/one'
-								},
-								{
-									startIndex: 14,
-									endIndex: 21,
-									uri: 'https://example.com/two'
+									startIndex: markerStart,
+									endIndex: markerStart + '[web:4]'.length,
+									uri: 'https://arxiv.org/abs/1810.03993'
 								}
 							]
 						}
@@ -394,22 +364,18 @@ describe('Perplexity Agent response adapter', () => {
 				}
 			],
 			usage: {
-				prompt_tokens: 12,
-				completion_tokens: 8,
-				total_tokens: 20
+				prompt_tokens: 120,
+				completion_tokens: 12,
+				total_tokens: 132
 			}
 		});
 	});
 
-	it('uses a frozen zero-usage rule when Agent usage is absent', () => {
+	it('omits usage when Agent usage is absent', () => {
 		const response = { ...completedResponse, usage: undefined };
-		expect(
-			transformPerplexityAgentResponse(response, 'perplexity:low').usage
-		).toEqual({
-			prompt_tokens: 0,
-			completion_tokens: 0,
-			total_tokens: 0
-		});
+		expect(transformPerplexityAgentResponse(response)).not.toHaveProperty(
+			'usage'
+		);
 	});
 
 	it('maps documented token exhaustion to length', () => {
@@ -419,21 +385,17 @@ describe('Perplexity Agent response adapter', () => {
 			incomplete_details: { reason: 'max_output_tokens' }
 		};
 		expect(
-			transformPerplexityAgentResponse(response, 'perplexity:medium')
-				.choices[0].finish_reason
+			transformPerplexityAgentResponse(response).choices[0].finish_reason
 		).toBe('length');
 	});
 
 	it('rejects undocumented incomplete reasons', () => {
 		expect(() =>
-			transformPerplexityAgentResponse(
-				{
-					...completedResponse,
-					status: 'incomplete',
-					incomplete_details: { reason: 'max_tokens' }
-				},
-				'perplexity:medium'
-			)
+			transformPerplexityAgentResponse({
+				...completedResponse,
+				status: 'incomplete',
+				incomplete_details: { reason: 'max_tokens' }
+			})
 		).toThrow();
 	});
 
@@ -444,25 +406,38 @@ describe('Perplexity Agent response adapter', () => {
 		['in_progress', undefined]
 	])('rejects %s responses outside token exhaustion', (status, error) => {
 		expect(() =>
-			transformPerplexityAgentResponse(
-				{ ...completedResponse, status, error },
-				'perplexity:high'
-			)
+			transformPerplexityAgentResponse({
+				...completedResponse,
+				status,
+				error
+			})
 		).toThrow();
 	});
 
 	it('rejects malformed and empty completed responses', () => {
 		expect(() =>
-			transformPerplexityAgentResponse(
-				{ ...completedResponse, id: undefined },
-				'perplexity:fast'
-			)
+			transformPerplexityAgentResponse({
+				...completedResponse,
+				id: undefined
+			})
 		).toThrow('missing identity');
 		expect(() =>
-			transformPerplexityAgentResponse(
-				{ ...completedResponse, output: [] },
-				'perplexity:fast'
-			)
+			transformPerplexityAgentResponse({
+				...completedResponse,
+				output: []
+			})
 		).toThrow('empty completed output');
+		expect(() =>
+			transformPerplexityAgentResponse({
+				...completedResponse,
+				model: undefined
+			})
+		).toThrow('missing model');
+		expect(() =>
+			transformPerplexityAgentResponse({
+				...completedResponse,
+				usage: { input_tokens: 1, output_tokens: 2 }
+			})
+		).toThrow('malformed usage');
 	});
 });
