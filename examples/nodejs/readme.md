@@ -52,7 +52,7 @@ pnpm --filter example-nodejs pipe.perplexity.agent
 pnpm --filter example-nodejs pipe.perplexity.agent.stream
 ```
 
-This is local-runtime support only; it does not demonstrate Langbase-hosted execution. Custom tools and tool replay, streamed citation metadata, background mode, file output, explicit Agent models, `xhigh`, and `wide-research` are unsupported. See the [migration overview](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview) and [field-by-field guide](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/how-to).
+This is public BaseAI OSS local-runtime support only. It does not change, validate, or propose fixes for Langbase-hosted or other proprietary systems. Custom tools and tool replay, streamed citation metadata, background mode, file output, explicit Agent models, `xhigh`, and `wide-research` are unsupported. See the [migration overview](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview) and [field-by-field guide](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/how-to).
 
 ## Other examples
 
