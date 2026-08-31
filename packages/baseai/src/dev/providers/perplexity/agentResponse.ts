@@ -18,6 +18,14 @@ export const PERPLEXITY_AGENT_PRESETS = [
 	'high'
 ] as const;
 
+export const PERPLEXITY_LEGACY_MODELS = [
+	'perplexity:llama-3.1-sonar-huge-128k-online',
+	'perplexity:llama-3.1-sonar-large-128k-online',
+	'perplexity:llama-3.1-sonar-small-128k-online',
+	'perplexity:llama-3.1-sonar-large-128k-chat',
+	'perplexity:llama-3.1-sonar-small-128k-chat'
+] as const;
+
 export type PerplexityAgentPreset = (typeof PERPLEXITY_AGENT_PRESETS)[number];
 
 interface AgentInputMessage {
@@ -130,7 +138,18 @@ export function isPerplexityAgentModel(model: string): boolean {
 export function getPerplexityTransport(
 	model: string
 ): 'agentResponse' | 'chatComplete' {
-	return isPerplexityAgentModel(model) ? 'agentResponse' : 'chatComplete';
+	if (isPerplexityAgentModel(model)) return 'agentResponse';
+	if (
+		PERPLEXITY_LEGACY_MODELS.includes(
+			model as (typeof PERPLEXITY_LEGACY_MODELS)[number]
+		)
+	) {
+		return 'chatComplete';
+	}
+	throw new ApiError({
+		code: 'BAD_REQUEST',
+		message: `Unsupported Perplexity model: ${model}`
+	});
 }
 
 function getAgentPreset(model: string): PerplexityAgentPreset {

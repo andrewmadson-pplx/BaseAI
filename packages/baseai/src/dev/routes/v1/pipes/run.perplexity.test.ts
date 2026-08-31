@@ -24,6 +24,7 @@ const LEGACY_MODELS = [
 	'llama-3.1-sonar-large-128k-chat',
 	'llama-3.1-sonar-small-128k-chat'
 ] as const;
+const UNSUPPORTED_MODELS = ['xhigh', 'wide-research', 'typo'] as const;
 
 function scaffoldPipe(model: string, overrides: Partial<Pipe> = {}): Pipe {
 	return {
@@ -198,6 +199,25 @@ describe('POST /v1/pipes/run Perplexity dispatch', () => {
 		}
 	);
 
+	it.each(UNSUPPORTED_MODELS)(
+		'rejects unsupported perplexity:%s before provider fetch',
+		async model => {
+			const response = await runRoute(
+				requestBody(scaffoldPipe(`perplexity:${model}`))
+			);
+			expect(response.status).toBe(400);
+			await expect(response.json()).resolves.toMatchObject({
+				success: false,
+				error: {
+					status: 400,
+					code: 'BAD_REQUEST',
+					message: `Unsupported Perplexity model: perplexity:${model}`
+				}
+			});
+			expect(fetchMock).not.toHaveBeenCalled();
+		}
+	);
+
 	it('rejects request tools before provider fetch', async () => {
 		const response = await runRoute({
 			...requestBody(scaffoldPipe('perplexity:fast')),
@@ -244,6 +264,38 @@ describe('POST /v1/pipes/run Perplexity dispatch', () => {
 		);
 		expect(response.status).toBe(200);
 		await expect(response.text()).rejects.toThrow('stream failed');
+	});
+
+	it('maps an HTTP 200 failed Agent response to an internal error', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					...documentedAgentResponse,
+					status: 'failed',
+					error: {
+						message: 'Agent execution failed',
+						code: 'agent_failed',
+						type: 'server_error'
+					}
+				}),
+				{
+					status: 200,
+					headers: { 'content-type': 'application/json' }
+				}
+			)
+		);
+		const response = await runRoute(
+			requestBody(scaffoldPipe('perplexity:fast'))
+		);
+		expect(response.status).toBe(500);
+		await expect(response.json()).resolves.toMatchObject({
+			success: false,
+			error: {
+				status: 500,
+				code: 'INTERNAL_SERVER_ERROR',
+				message: 'Agent execution failed'
+			}
+		});
 	});
 
 	it.each([

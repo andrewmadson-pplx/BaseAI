@@ -26,17 +26,17 @@ export async function callPerplexity({
 	messages: Message[];
 	paramsTools?: PipeTool[];
 }) {
-	try {
-		if (getPerplexityTransport(pipe.model) === 'agentResponse') {
-			return await callPerplexityAgent({
-				pipe,
-				messages,
-				llmApiKey,
-				stream,
-				paramsTools
-			});
-		}
+	if (getPerplexityTransport(pipe.model) === 'agentResponse') {
+		return await callPerplexityAgent({
+			pipe,
+			messages,
+			llmApiKey,
+			stream,
+			paramsTools
+		});
+	}
 
+	try {
 		const modelParams = buildModelParams(pipe, stream, messages);
 
 		// Transform params according to provider's format
