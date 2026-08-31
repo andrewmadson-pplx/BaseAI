@@ -19,7 +19,10 @@ async function main() {
 	const runner = getRunner(stream);
 	runner.on('content', content => process.stdout.write(content));
 	runner.on('end', () => process.stdout.write('\n'));
-	runner.on('error', error => console.error(error));
+	await runner.done();
 }
 
-main();
+main().catch(error => {
+	console.error(error);
+	process.exitCode = 1;
+});
